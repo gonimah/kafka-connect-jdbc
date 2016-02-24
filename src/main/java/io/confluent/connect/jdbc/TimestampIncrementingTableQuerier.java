@@ -22,6 +22,7 @@ import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -59,11 +60,11 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
   private String timestampColumn;
   private Long timestampOffset;
   private String incrementingColumn;
-  private Long incrementingOffset = null;
+  private BigDecimal incrementingOffset = null;
 
   public TimestampIncrementingTableQuerier(QueryMode mode, String name, String topicPrefix,
                                            String timestampColumn, Long timestampOffset,
-                                           String incrementingColumn, Long incrementingOffset) {
+                                           String incrementingColumn, BigDecimal incrementingOffset) {
     super(mode, name, topicPrefix);
     this.timestampColumn = timestampColumn;
     this.timestampOffset = timestampOffset;
@@ -149,10 +150,11 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
     if (incrementingColumn != null && timestampColumn != null) {
       Timestamp ts = new Timestamp(timestampOffset == null ? 0 : timestampOffset);
       stmt.setTimestamp(1, ts, UTC_CALENDAR);
-      stmt.setLong(2, (incrementingOffset == null ? -1 : incrementingOffset));
-      stmt.setTimestamp(3, ts, UTC_CALENDAR);
+        stmt.setBigDecimal(2, (incrementingOffset == null ? new BigDecimal(-1) : incrementingOffset));
+
+        stmt.setTimestamp(3, ts, UTC_CALENDAR);
     } else if (incrementingColumn != null) {
-      stmt.setLong(1, (incrementingOffset == null ? -1 : incrementingOffset));
+      stmt.setBigDecimal(1, (incrementingOffset == null ? new BigDecimal(-1) : incrementingOffset));
     } else if (timestampColumn != null) {
       Timestamp ts = new Timestamp(timestampOffset == null ? 0 : timestampOffset);
       stmt.setTimestamp(1, ts, UTC_CALENDAR);
@@ -163,16 +165,21 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
   @Override
   public SourceRecord extractRecord() throws SQLException {
     Struct record = DataConverter.convertRecord(schema, resultSet);
-    Map<String, Long> offset = new HashMap<>();
+    Map<String, BigDecimal> offset = new HashMap<>();
     if (incrementingColumn != null) {
-      Long id;
+      BigDecimal id;
       switch (schema.field(incrementingColumn).schema().type()) {
-        case INT32:
-          id = (long) (Integer) record.get(incrementingColumn);
-          break;
-        case INT64:
-          id = (Long) record.get(incrementingColumn);
-          break;
+          case INT32:
+              id = (BigDecimal) record.get(incrementingColumn);
+              break;
+          case INT64:
+              id = (BigDecimal) record.get(incrementingColumn);
+              break;
+          case STRING:
+              log.info("record: {}", record.get(incrementingColumn));
+              //id = Long.parseLong((String)record.get(incrementingColumn));
+              id = new BigDecimal((String) record.get(incrementingColumn));
+              break;
         default:
           throw new ConnectException("Invalid type for incrementing column: "
                                             + schema.field(incrementingColumn).schema().type());
@@ -180,7 +187,7 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
 
       // If we are only using an incrementing column, then this must be incrementing. If we are also
       // using a timestamp, then we may see updates to older rows.
-      assert (incrementingOffset == null || id > incrementingOffset) || timestampColumn != null;
+      assert (incrementingOffset == null || id.compareTo(incrementingOffset) > 0) || timestampColumn != null;
       incrementingOffset = id;
 
       offset.put(JdbcSourceTask.INCREMENTING_FIELD, id);
@@ -191,7 +198,7 @@ public class TimestampIncrementingTableQuerier extends TableQuerier {
       Date timestamp = (Date) record.get(timestampColumn);
       assert timestampOffset == null || timestamp.getTime() >= timestampOffset;
       timestampOffset = timestamp.getTime();
-      offset.put(JdbcSourceTask.TIMESTAMP_FIELD, timestampOffset);
+      offset.put(JdbcSourceTask.TIMESTAMP_FIELD, new BigDecimal(timestampOffset));
     }
 
     // TODO: Key?

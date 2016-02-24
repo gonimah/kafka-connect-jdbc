@@ -22,6 +22,7 @@ import org.apache.kafka.connect.source.SourceTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -140,9 +141,9 @@ public class JdbcSourceTask extends SourceTask {
           throw new ConnectException("Unexpected query mode: " + queryMode);
       }
       Map<String, Object> offset = offsets == null ? null : offsets.get(partition);
-      Long incrementingOffset = offset == null ? null :
-                              (Long)offset.get(INCREMENTING_FIELD);
-      Long timestampOffset = offset == null ? null :
+        BigDecimal incrementingOffset = offset == null ? null : new BigDecimal((Long)offset.get(INCREMENTING_FIELD));
+
+        Long timestampOffset = offset == null ? null :
                              (Long)offset.get(TIMESTAMP_FIELD);
 
       String topicPrefix = config.getString(JdbcSourceTaskConfig.TOPIC_PREFIX_CONFIG);
